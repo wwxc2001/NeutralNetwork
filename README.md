@@ -63,7 +63,7 @@ python train.py --input_dim 3072 \
 生成的模型权重会以`npy`的形式自动保存在`save_model_path`文件夹中；训练中产生的loss和Accuracy信息会以`json`文件的形式保存在`save_loss_path`文件夹中
 ### 模型测试
 
-* 模型权重地址：[https://pan.baidu.com/s/1r3OuJWtuX7Np-Zfwd90wYg?pwd=2ttu](https://pan.baidu.com/s/14VxRoux2bBZOMeWqDkNRwQ?pwd=5pmb)]
+* 模型权重地址：[https://pan.baidu.com/s/14VxRoux2bBZOMeWqDkNRwQ?pwd=5pmb](https://pan.baidu.com/s/14VxRoux2bBZOMeWqDkNRwQ?pwd=5pmb)
 * 将模型权重文件放至目录`save_model_path`中；
 * 运行：
 ```bash
