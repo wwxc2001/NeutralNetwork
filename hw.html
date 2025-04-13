@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LQA 算法代码展示</title>
+    <style>
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border: 1px solid #ccc;
+            overflow-x: auto;
+        }
+
+        code {
+            font-family: monospace;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>LQA 算法代码展示</h1>
+    <p>本代码实现了局部二次逼近（LQA）算法，用于解决 Lasso 问题，并进行了模拟实验，最后绘制了非零参数估计误差的箱线图。</p>
+
+    <h2>导入必要的库</h2>
+    <pre>
+        <code class="python">
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.linalg import inv
+        </code>
+    </pre>
+    <p>这里导入了三个必要的 Python 库：`numpy` 用于数值计算，`matplotlib.pyplot` 用于绘图，`scipy.linalg.inv` 用于矩阵求逆。</p>
+
+    <h2>生成模拟数据</h2>
+    <pre>
+        <code class="python">
+def generate_data(N, seed_X=2025, seed_eps=None):
+    """
+    根据给定线性模型生成模拟数据。
+
+    参数说明：
+    - N: 样本量，即数据集中样本的数量。
+    - seed_X: 用于生成 X 的随机种子，在多次模拟中保持固定，确保 X 的生成具有可重复性。
+    - seed_eps: 用于生成 epsilon 的随机种子，每次模拟时都会变化，以引入不同的随机误差。
+
+    返回值：
+    - X: 设计矩阵，形状为 (N x 5)。
+    - y: 响应向量，形状为 (N x 1)。
+    """
+    np.random.seed(seed_X)
+    X = np.random.normal(0, 1, size=(N, 5))
+    beta_true = np.array([3, 1.5, 0, 0, 2])
+
+    np.random.seed(seed_eps)
+    epsilon = np.random.normal(0, 1, size=N)
+
+    y = X.dot(beta_true) + epsilon
+    return X, y, beta_true
+        </code>
+    </pre>
+    <p>此函数根据给定的线性模型生成模拟数据。通过设置随机种子，可以保证实验的可重复性。</p>
+
+    <h2>计算 Σ_λ(β)</h2>
+    <pre>
+        <code class="python">
+def compute_sigma_lambda(beta, lambda_val, a=3.7):
+    """
+    计算 Σ_λ(β) = diag{p′_λ(|β|)/|β|}，使用 SCAD 惩罚项计算 p′_λ(|β|)。
+
+    参数说明：
+    - beta: 当前系数估计值，形状为 (p x 1)。
+    - lambda_val: 正则化参数，用于控制惩罚的强度。
+    - a: SCAD 惩罚项的参数。
+
+    返回值：
+    - sigma_lambda: 对角矩阵，形状为 (p x p)。
+    """
+    # 通过添加一个小的常量 epsilon 来避免除以零的情况。
+    epsilon = 1e-8
+    abs_beta = np.abs(beta) + epsilon
+    p_prime = np.zeros_like(abs_beta)
+    for i in range(len(abs_beta)):
+        if abs_beta[i] <= lambda_val:
+            p_prime[i] = lambda_val
+        elif lambda_val < abs_beta[i] <= a * lambda_val:
+            p_prime[i] = (a * lambda_val - abs_beta[i]) / (a - 1)
+        else:
+            p_prime[i] = 0
+    diagonal_elements = p_prime / abs_beta
+    return np.diag(diagonal_elements)
+        </code>
+    </pre>
+    <p>该函数用于计算 Σ_λ(β)，通过 SCAD 惩罚项来调整系数估计值，避免出现除以零的情况。</p>
+
+    <h2>LQA 算法实现</h2>
+    <pre>
+        <code class="python">
+def lqa_algorithm(X, y, lambda_val, a=3.7, max_iter=1000, tol=1e-3):
+    """
+    为 Lasso 问题实现局部二次逼近（LQA）算法。
+
+    参数说明：
+    - X: 设计矩阵，形状为 (N x p)。
+    - y: 响应向量，形状为 (N x 1)。
+    - lambda_val: 正则化参数，控制模型的复杂度。
+    - a: SCAD 惩罚项的参数。
+    - max_iter: 最大迭代次数，防止算法陷入无限循环。
+    - tol: 收敛容差，当系数估计值的变化小于该值时，认为算法收敛。
+
+    返回值：
+    - beta_hat: 估计的系数。
+    - n_iter: 执行的迭代次数。
+    """
+    n, p = X.shape
+
+    # 初始值：普通最小二乘法（OLS）估计值
+    beta_hat = inv(X.T.dot(X)).dot(X.T).dot(y)
+    # 持续迭代，直到达到最大次数或者达到收敛容差
+    for k in range(max_iter):
+        beta_old = beta_hat.copy()
+
+        # 计算 Σ_λ(β^[k])
+        sigma_lambda = compute_sigma_lambda(beta_old, lambda_val, a)
+
+        # 更新 β
+        XTX = X.T.dot(X)
+        matrix_to_invert = XTX + n * sigma_lambda
+        beta_hat = inv(matrix_to_invert).dot(X.T).dot(y)
+
+        # 检查收敛性
+        if np.max(np.abs(beta_hat - beta_old)) < tol:
+            break
+        if k == max_iter - 1:
+            print(f"Did not converge within {max_iter} iterations. Final difference: {np.max(np.abs(beta_hat - beta_old))}")
+
+    return beta_hat, k + 1
+        </code>
+    </pre>
+    <p>此函数实现了 LQA 算法，通过迭代更新系数估计值，直到满足收敛条件或达到最大迭代次数。</p>
+
+    <h2>模拟实验</h2>
+    <pre>
+        <code class="python">
+def simulation_study(N_values, R=100, lambda_val=1, a=3.7):
+    """
+    针对题设要求的不同的样本量开展模拟。
+
+    参数说明：
+    - N_values: 待模拟的样本量列表，包含不同的样本量值。
+    - R: 重复实验的次数，用于多次验证结果的稳定性。
+    - lambda_val: 正则化系数，控制模型的复杂度。
+    - a: SCAD 惩罚项的参数。
+
+    返回值：
+    - results: 一个包含每个样本量 N 对应的模拟结果，用于后续估计误差箱线图的绘制。
+    """
+    results = {}
+
+    for N in N_values:
+        # 每个样本量只生成一次 X（在所有重复实验中保持固定）
+        X_fixed, _, beta_true = generate_data(N, seed_X=2025, seed_eps=None)
+
+        biases = np.zeros((R, 5))  # 存储所有 5 个参数的偏差。
+
+        for r in range(R):
+            # 每次使用不同的随机误差项（ϵ）生成新的 y 值。
+            _, y_r, _ = generate_data(N, seed_X=2025, seed_eps=r + 1)
+
+            # 运行 LQA 算法进行迭代
+            beta_hat, k = lqa_algorithm(X_fixed, y_r, lambda_val, a)
+            print(f"迭代{k}次")
+
+            # 计算偏差
+            biases[r] = beta_hat - beta_true
+
+        results[N] = biases
+
+    return results
+        </code>
+    </pre>
+    <p>该函数针对不同的样本量进行模拟实验，多次重复实验以获取稳定的结果，并计算每个样本量下的参数偏差。</p>
+
+    <h2>绘制箱线图</h2>
+    <pre>
+        <code class="python">
+def plot_results(results, filename="lqa_estimates.pdf"):
+    """
+    绘制非零参数估计误差的箱线图并保存为 PDF 格式。
+
+    参数说明：
+    - results: 包含模拟结果的字典，键为样本量，值为参数偏差。
+    - filename: 输出 PDF 文件的名称。
+
+    返回值：
+    - 无
+    """
+    N_values = sorted(results.keys())
+    non_zero_indices = [0, 1, 4]  # 非零参数 (3, 1.5, 2) 的索引
+    param_names = ['β1 (true=3)', 'β2 (true=1.5)', 'β5 (true=2)']
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    for i, (idx, name) in enumerate(zip(non_zero_indices, param_names)):
+        ax = axes[i]
+
+        # 为对应参数准备数据
+        data = []
+        for N in N_values:
+            data.append(results[N][:, idx])
+
+        # 使用更新后的参数名称创建箱线图。
+        ax.boxplot(data, tick_labels=N_values)
+        ax.set_title(name)
+        ax.set_xlabel('Sample Size')
+        ax.set_ylabel('Estimation Error')
+        ax.axhline(0, color='red', linestyle='--')  # 零值参考线
+
+    plt.tight_layout()
+    plt.savefig(filename, bbox_inches='tight', format='pdf')
+    plt.show()
+    plt.close()
+        </code>
+    </pre>
+    <p>此函数根据模拟结果绘制非零参数估计误差的箱线图，并将其保存为 PDF 文件。</p>
+
+    <h2>主程序</h2>
+    <pre>
+        <code class="python">
+if __name__ == "__main__":
+    # 参数
+    N_values = [50, 100, 200]  # 测试样本量
+    R = 100  # 重复次数
+    lambda_val = 1  # 正则化参数
+    # 作业要求的正则话参数设置过大，惩罚作用增强，系数被过度收缩，使得估计值小于真实值的情况，实验中尝试设置为0.1，效果更佳
+    # lambda_val = 0.1 
+    a = 3.7  # SCAD惩罚项的参数
+
+    # 运行模拟实验
+    results = simulation_study(N_values, R, lambda_val, a)
+
+    # 展示箱线图并保存结果
+    plot_results(results, filename="lqa_estimates.pdf")
+        </code>
+    </pre>
+    <p>主程序设置了模拟实验的参数，运行模拟实验并绘制箱线图，最后将结果保存为 PDF 文件。</p>
+
+    <h2>查看模拟结果 PDF</h2>
+    <p>以下是通过 LQA 算法进行模拟实验得到的非零参数估计误差的箱线图结果，其中正则化参数，以 PDF 格式展示。</p>
+    <embed src="lqa_estimates_1.pdf" width="100%" height="800px" type="application/pdf">
+    <p>作业要求的正则话参数设置过大，惩罚作用增强，系数被过度收缩，使得估计值小于真实值的情况，实验中尝试设置为0.1，效果更佳，以下是正则化参数设置为0.1，得到的非零参数估计误差的箱线图结果。</p>
+    <embed src="lqa_estimates_01.pdf" width="100%" height="800px" type="application/pdf">
+</body>
+
+</html>
